@@ -4,142 +4,100 @@
   <meta charset="UTF-8">
   <title>Family Tree Viewer</title>
   <style>
-    body {
-      font-family: monospace;
-      white-space: pre;
-      background: #f9f9f9;
-      padding: 20px;
-    }
-    #tree {
-      font-size: 14px;
-    }
+    body { font-family: Arial, sans-serif; white-space: pre; background: #111; color: #eee; padding: 20px; }
+    .person { margin-left: 20px; }
+    .root { font-weight: bold; }
   </style>
 </head>
 <body>
-<h2>Family Tree</h2>
-<div id="tree">Loading...</div>
+  <h1>Family Tree</h1>
+  <div id="tree"></div>
 
-<script>
-const GEDCOM_URL = 'family_tree.ged';
-
-async function loadGedcom() {
-  const response = await fetch(GEDCOM_URL);
-  const text = await response.text();
-  const { people, families } = parseGedcom(text);
-  document.getElementById('tree').textContent = buildTree(people, families);
-}
-
-function parseGedcom(text) {
-  const people = {};
-  const families = {};
-  const lines = text.split(/\r?\n/);
-
-  let currentPerson = null;
-  let currentFamily = null;
-
-  for (const line of lines) {
-    const parts = line.trim().split(' ');
-    if (parts.length < 2) continue;
-    const level = parts[0];
-    const pointerOrTag = parts[1];
-    const tagOrValue = parts[2];
-    const value = parts.slice(3).join(' ');
-
-    if (tagOrValue === "INDI") {
-      currentPerson = pointerOrTag;
-      people[currentPerson] = { id: currentPerson, name: "", childOf: null, spouseIn: [] };
-    } else if (tagOrValue === "FAM") {
-      currentFamily = pointerOrTag;
-      families[currentFamily] = { husband: null, wife: null, children: [] };
-    } else if (currentPerson) {
-      if (pointerOrTag === "NAME") {
-        people[currentPerson].name = value.replace(/\//g, '').trim();
-      } else if (pointerOrTag === "FAMC") {
-        people[currentPerson].childOf = value;
-      } else if (pointerOrTag === "FAMS") {
-        people[currentPerson].spouseIn.push(value);
-      }
-    } else if (currentFamily) {
-      if (pointerOrTag === "HUSB") {
-        families[currentFamily].husband = value;
-      } else if (pointerOrTag === "WIFE") {
-        families[currentFamily].wife = value;
-      } else if (pointerOrTag === "CHIL") {
-        families[currentFamily].children.push(value);
-      }
-    }
-  }
-  return { people, families };
-}
-
-function buildTree(people, families) {
-  const drawn = new Set();
-  let output = "";
-
-  function getName(id) {
-    return people[id] ? people[id].name : "Unknown";
-  }
-
-  function drawMarriage(famId, indent) {
-    const fam = families[famId];
-    if (!fam) return "";
-
-    const husbName = getName(fam.husband);
-    const wifeName = getName(fam.wife);
-
-    let text = `${" ".repeat(indent)}${husbName} +++ ${wifeName}\n`;
-
-    if (fam.children.length > 0) {
-      if (fam.children.length === 1) {
-        const childId = fam.children[0];
-        if (!drawn.has(childId)) {
-          drawn.add(childId);
-          text += `${" ".repeat(indent + 12)}\\\n`;
-          text += drawPerson(childId, indent + 15);
-        }
-      } else {
-        text += `${" ".repeat(indent + 12)}|\n`;
-        text += `${" ".repeat(indent + 5)}--------------------------------------------\n`;
-        const childrenNames = fam.children.map(id => getName(id)).join('   ');
-        text += `${" ".repeat(indent + 5)}${childrenNames}\n`;
-      }
+  <script>
+    async function loadGEDCOM() {
+      const response = await fetch('family_tree.ged');
+      const text = await response.text();
+      return text;
     }
 
-    return text;
-  }
+    function parseGEDCOM(gedText) {
+      const people = {};
+      const families = {};
+      let currentId = null;
+      let currentFam = null;
+      const lines = gedText.split(/\r?\n/);
 
-  function drawPerson(id, indent) {
-    const person = people[id];
-    if (!person) return "";
+      for (const line of lines) {
+        const parts = line.split(' ');
+        if (parts.length < 2) continue;
+        const level = parts[0];
 
-    let text = `${" ".repeat(indent)}${person.name}\n`;
-
-    if (person.spouseIn.length > 0) {
-      for (const famId of person.spouseIn) {
-        if (families[famId]) {
-          text += `${" ".repeat(indent)}\\\n`;
-          text += drawMarriage(famId, indent + 3);
+        if (parts[1].startsWith('@I') && parts[2] === 'INDI') {
+          currentId = parts[1];
+          people[currentId] = { name: '', famc: null, fams: [] };
+        } else if (parts[1].startsWith('@F') && parts[2] === 'FAM') {
+          currentFam = parts[1];
+          families[currentFam] = { husb: null, wife: null, chil: [] };
+        } else if (parts[1] === 'NAME' && currentId) {
+          people[currentId].name = parts.slice(2).join(' ').replace(/\//g, '');
+        } else if (parts[1] === 'FAMC' && currentId) {
+          people[currentId].famc = parts[2];
+        } else if (parts[1] === 'FAMS' && currentId) {
+          people[currentId].fams.push(parts[2]);
+        } else if (parts[1] === 'HUSB' && currentFam) {
+          families[currentFam].husb = parts[2];
+        } else if (parts[1] === 'WIFE' && currentFam) {
+          families[currentFam].wife = parts[2];
+        } else if (parts[1] === 'CHIL' && currentFam) {
+          families[currentFam].chil.push(parts[2]);
         }
       }
+
+      return { people, families };
     }
-    return text;
-  }
 
-  // Find roots (people with no parents)
-  const roots = Object.values(people).filter(p => !p.childOf);
-
-  for (const root of roots) {
-    if (!drawn.has(root.id)) {
-      drawn.add(root.id);
-      output += drawPerson(root.id, 0);
-      output += "\n";
+    function findRoots(people) {
+      return Object.entries(people)
+        .filter(([id, person]) => !person.famc)
+        .map(([id, person]) => id);
     }
-  }
 
-  return output.trim();
-}
+    function buildTree(id, people, families, depth = 0) {
+      const person = people[id];
+      if (!person) return '';
+      let tree = ' '.repeat(depth * 4) + person.name + '\n';
 
-loadGedcom();
-</script>
+      for (const famId of person.fams) {
+        const fam = families[famId];
+        if (!fam) continue;
+
+        if (fam.husb && fam.wife) {
+          tree += ' '.repeat(depth * 4) + fam.husb && fam.wife ? `${people[fam.husb]?.name || ''} + ${people[fam.wife]?.name || ''}\n` : '';
+          tree += ' '.repeat(depth * 4) + '    |\n';
+        }
+
+        for (const childId of fam.chil) {
+          tree += buildTree(childId, people, families, depth + 1);
+        }
+      }
+
+      return tree;
+    }
+
+    async function main() {
+      const gedText = await loadGEDCOM();
+      const { people, families } = parseGEDCOM(gedText);
+      const roots = findRoots(people);
+
+      let treeText = '';
+      for (const rootId of roots) {
+        treeText += buildTree(rootId, people, families) + '\n';
+      }
+
+      document.getElementById('tree').textContent = treeText.trim();
+    }
+
+    main();
+  </script>
 </body>
 </html>
