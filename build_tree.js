@@ -1,6 +1,7 @@
 export function buildTree(individuals, families, ancestorIds) {
   const output = [];
   const generations = [];
+  const seen = new Set(); // <-- NEW
 
   let queue = ancestorIds.map(id => ({ indiId: id }));
 
@@ -9,6 +10,9 @@ export function buildTree(individuals, families, ancestorIds) {
     const generation = [];
 
     for (const { indiId } of queue) {
+      if (seen.has(indiId)) continue; // <-- ADD THIS
+      seen.add(indiId); // <-- AND THIS
+
       const person = individuals[indiId];
       if (!person) continue;
 
@@ -22,7 +26,9 @@ export function buildTree(individuals, families, ancestorIds) {
 
             if (fam.chil && fam.chil.length) {
               for (const childId of fam.chil) {
-                nextQueue.push({ indiId: childId });
+                if (!seen.has(childId)) { // <-- NEW
+                  nextQueue.push({ indiId: childId });
+                }
               }
             }
           }
@@ -51,8 +57,4 @@ export function buildTree(individuals, families, ancestorIds) {
   }
 
   return output.join("\n");
-}
-
-function getName(individuals, id) {
-  return individuals[id] ? individuals[id].name : '?';
 }
