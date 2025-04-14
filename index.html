@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Family Tree Viewer</title>
+  <title>Dynamic Family Tree Viewer</title>
   <style>
     body {
       font-family: monospace;
@@ -42,13 +42,12 @@ function parseGEDCOM(text) {
     } else if (line.startsWith('1 NAME') && currentId) {
       let name = line.substring(7).replace(/\//g, '').trim();
       if (name.length > 15) name = name.substring(0, 14) + '…';
-      individuals[currentId] = { name, parents: [], children: [] };
+      individuals[currentId] = { name, parents: [], families: [] };
     } else if (line.startsWith('1 FAMC') && currentId) {
       const famc = line.split(' ').pop();
       individuals[currentId].parents.push(famc);
     } else if (line.startsWith('1 FAMS') && currentId) {
       const fams = line.split(' ').pop();
-      individuals[currentId].families = individuals[currentId].families || [];
       individuals[currentId].families.push(fams);
     } else if (line.startsWith('1 HUSB') && currentFam) {
       families[currentFam] = families[currentFam] || {};
@@ -63,20 +62,6 @@ function parseGEDCOM(text) {
     }
   }
 
-  // Link parents and children
-  for (const famId in families) {
-    const fam = families[famId];
-    const { husb, wife, chil = [] } = fam;
-    for (const childId of chil) {
-      if (individuals[childId]) {
-        individuals[childId].father = husb;
-        individuals[childId].mother = wife;
-      }
-      if (individuals[husb]) individuals[husb].children.push(childId);
-      if (individuals[wife]) individuals[wife].children.push(childId);
-    }
-  }
-
   return { individuals, families };
 }
 
@@ -84,42 +69,102 @@ function getName(individuals, id) {
   return individuals[id] ? individuals[id].name : '?';
 }
 
-// Walk up the tree recursively
-function buildTree(individuals, startIds, level = 0) {
-  let output = "";
-  let nextLevel = [];
+// Find the topmost ancestor starting from a person
+function findTopmostAncestor(individuals, families, startId) {
+  let currentId = startId;
 
-  for (let id of startIds) {
-    const indi = individuals[id];
-    if (!indi) continue;
+  while (true) {
+    const indi = individuals[currentId];
+    if (!indi || !indi.parents.length) break;
 
-    // Print parents if they exist
-    const famc = indi.parents[0];
-    if (famc && families[famc]) {
-      const fatherId = families[famc].husb;
-      const motherId = families[famc].wife;
-      if (fatherId && motherId) {
-        output += " ".repeat(level * 4) + getName(individuals, fatherId) + " +++ " + getName(individuals, motherId) + "\n";
-        nextLevel.push(fatherId, motherId);
+    const parentFamId = indi.parents[0];
+    const fam = families[parentFamId];
+    if (fam && fam.husb) {
+      currentId = fam.husb;
+    } else if (fam && fam.wife) {
+      currentId = fam.wife;
+    } else {
+      break;
+    }
+  }
+
+  return currentId;
+}
+
+// Build the tree generation by generation
+function buildTree(individuals, families, startId) {
+  const output = [];
+  const generations = [];
+
+  let queue = [{ indiId: startId, level: 0 }];
+  const seen = new Set();
+
+  while (queue.length) {
+    const nextQueue = [];
+    const generation = [];
+
+    for (const { indiId } of queue) {
+      if (seen.has(indiId)) continue;
+      seen.add(indiId);
+
+      const indi = individuals[indiId];
+      if (!indi) continue;
+
+      if (indi.families.length) {
+        for (const famId of indi.families) {
+          const fam = families[famId];
+          if (fam) {
+            const husb = getName(individuals, fam.husb);
+            const wife = getName(individuals, fam.wife);
+            generation.push(`${husb} +++ ${wife}`);
+
+            if (fam.chil && fam.chil.length) {
+              for (const childId of fam.chil) {
+                nextQueue.push({ indiId: childId });
+              }
+            }
+          }
+        }
+      } else {
+        generation.push(getName(individuals, indiId));
+      }
+    }
+
+    if (generation.length) {
+      generations.push(generation);
+    }
+    queue = nextQueue;
+  }
+
+  // Now format the generations
+  for (let i = 0; i < generations.length; i++) {
+    const line = generations[i].join("            "); // spaces between couples
+    output.push(line);
+
+    if (i < generations.length - 1) {
+      if (generations[i + 1].length === 1) {
+        // If only one child, vertical line
+        output.push(" ".repeat(line.length / 2) + "|");
+      } else {
+        // If multiple children, draw slashes and horizontal line
+        const mid = Math.floor(line.length / 2);
+        output.push(" ".repeat(mid - 1) + "\\" + " ".repeat(2) + "/");
+        output.push(" ".repeat(mid - 10) + "-".repeat(20));
       }
     }
   }
 
-  if (nextLevel.length > 0) {
-    output += buildTree(individuals, nextLevel, level + 1);
-  }
-
-  return output;
+  return output.join("\n");
 }
 
 async function main() {
   const gedcom = await loadGEDCOM();
-  const { individuals, families: fams } = await parseGEDCOM(gedcom);
-  window.families = fams; // so buildTree can access it
+  const { individuals, families } = await parseGEDCOM(gedcom);
 
-  // Start from Braden Jonsson
-  const startId = Object.keys(individuals).find(id => individuals[id].name.startsWith("Braden"));
-  const tree = buildTree(individuals, [startId]);
+  const bradenId = "@I0000@"; // starting individual: Braden
+  const topAncestorId = findTopmostAncestor(individuals, families, bradenId);
+
+  const tree = buildTree(individuals, families, topAncestorId);
 
   document.getElementById('tree').textContent = tree;
 }
