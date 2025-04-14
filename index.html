@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Family Tree Viewer (Text)</title>
+  <title>Family Tree Viewer</title>
   <style>
     body {
       font-family: monospace;
@@ -16,130 +16,130 @@
   </style>
 </head>
 <body>
-  <h2>Family Tree</h2>
-  <input type="file" id="fileInput" accept=".ged">
-  <div id="tree">Upload a .ged file to view the family tree.</div>
+<h2>Family Tree</h2>
+<div id="tree">Loading...</div>
 
-  <script>
-    document.getElementById('fileInput').addEventListener('change', function(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const gedcom = e.target.result;
-        drawTree(parseGedcom(gedcom));
-      };
-      reader.readAsText(file);
-    });
+<script>
+const GEDCOM_URL = 'family_tree.ged';
 
-    function parseGedcom(text) {
-      const people = {};
-      const families = {};
-      let currentPerson = null;
-      let currentFamily = null;
-      const lines = text.split(/\r?\n/);
+async function loadGedcom() {
+  const response = await fetch(GEDCOM_URL);
+  const text = await response.text();
+  const { people, families } = parseGedcom(text);
+  document.getElementById('tree').textContent = buildTree(people, families);
+}
 
-      for (const line of lines) {
-        const parts = line.trim().split(" ");
-        if (parts.length < 2) continue;
-        const level = parts[0];
-        const pointerOrTag = parts[1];
-        const tagOrValue = parts[2];
-        const value = parts.slice(3).join(" ");
+function parseGedcom(text) {
+  const people = {};
+  const families = {};
+  const lines = text.split(/\r?\n/);
 
-        if (tagOrValue === "INDI") {
-          currentPerson = pointerOrTag;
-          people[currentPerson] = { id: currentPerson, name: "", childOf: null, spouseIn: [] };
-        } else if (tagOrValue === "FAM") {
-          currentFamily = pointerOrTag;
-          families[currentFamily] = { husband: null, wife: null, children: [] };
-        } else if (currentPerson) {
-          if (pointerOrTag === "NAME") {
-            people[currentPerson].name = value.replace(/\//g, '').trim();
-          } else if (pointerOrTag === "FAMC") {
-            people[currentPerson].childOf = value;
-          } else if (pointerOrTag === "FAMS") {
-            people[currentPerson].spouseIn.push(value);
-          }
-        } else if (currentFamily) {
-          if (pointerOrTag === "HUSB") {
-            families[currentFamily].husband = value;
-          } else if (pointerOrTag === "WIFE") {
-            families[currentFamily].wife = value;
-          } else if (pointerOrTag === "CHIL") {
-            families[currentFamily].children.push(value);
-          }
-        }
+  let currentPerson = null;
+  let currentFamily = null;
+
+  for (const line of lines) {
+    const parts = line.trim().split(' ');
+    if (parts.length < 2) continue;
+    const level = parts[0];
+    const pointerOrTag = parts[1];
+    const tagOrValue = parts[2];
+    const value = parts.slice(3).join(' ');
+
+    if (tagOrValue === "INDI") {
+      currentPerson = pointerOrTag;
+      people[currentPerson] = { id: currentPerson, name: "", childOf: null, spouseIn: [] };
+    } else if (tagOrValue === "FAM") {
+      currentFamily = pointerOrTag;
+      families[currentFamily] = { husband: null, wife: null, children: [] };
+    } else if (currentPerson) {
+      if (pointerOrTag === "NAME") {
+        people[currentPerson].name = value.replace(/\//g, '').trim();
+      } else if (pointerOrTag === "FAMC") {
+        people[currentPerson].childOf = value;
+      } else if (pointerOrTag === "FAMS") {
+        people[currentPerson].spouseIn.push(value);
       }
-      return { people, families };
+    } else if (currentFamily) {
+      if (pointerOrTag === "HUSB") {
+        families[currentFamily].husband = value;
+      } else if (pointerOrTag === "WIFE") {
+        families[currentFamily].wife = value;
+      } else if (pointerOrTag === "CHIL") {
+        families[currentFamily].children.push(value);
+      }
+    }
+  }
+  return { people, families };
+}
+
+function buildTree(people, families) {
+  const drawn = new Set();
+  let output = "";
+
+  function getName(id) {
+    return people[id] ? people[id].name : "Unknown";
+  }
+
+  function drawMarriage(famId, indent) {
+    const fam = families[famId];
+    if (!fam) return "";
+
+    const husbName = getName(fam.husband);
+    const wifeName = getName(fam.wife);
+
+    let text = `${" ".repeat(indent)}${husbName} +++ ${wifeName}\n`;
+
+    if (fam.children.length > 0) {
+      if (fam.children.length === 1) {
+        const childId = fam.children[0];
+        if (!drawn.has(childId)) {
+          drawn.add(childId);
+          text += `${" ".repeat(indent + 12)}\\\n`;
+          text += drawPerson(childId, indent + 15);
+        }
+      } else {
+        text += `${" ".repeat(indent + 12)}|\n`;
+        text += `${" ".repeat(indent + 5)}--------------------------------------------\n`;
+        const childrenNames = fam.children.map(id => getName(id)).join('   ');
+        text += `${" ".repeat(indent + 5)}${childrenNames}\n`;
+      }
     }
 
-    function drawTree({ people, families }) {
-      const treeDiv = document.getElementById('tree');
-      const drawn = new Set();
-      let output = "";
+    return text;
+  }
 
-      function getName(id) {
-        return people[id] ? people[id].name : "Unknown";
-      }
+  function drawPerson(id, indent) {
+    const person = people[id];
+    if (!person) return "";
 
-      function buildMarriage(famId, indent) {
-        const fam = families[famId];
-        if (!fam) return "";
+    let text = `${" ".repeat(indent)}${person.name}\n`;
 
-        const husb = getName(fam.husband);
-        const wife = getName(fam.wife);
-
-        let text = `${" ".repeat(indent)}${husb} +++ ${wife}\n`;
-
-        if (fam.children.length > 0) {
-          if (fam.children.length === 1) {
-            const childId = fam.children[0];
-            if (!drawn.has(childId)) {
-              drawn.add(childId);
-              text += `${" ".repeat(indent + 12)}\\\n`;
-              text += buildPerson(childId, indent + 15);
-            }
-          } else {
-            text += `${" ".repeat(indent + 12)}|\n`;
-            text += `${" ".repeat(indent + 5)}---------------------------------------------\n`;
-            let childrenLine = fam.children.map(id => getName(id)).join('   ');
-            text += `${" ".repeat(indent + 5)}${childrenLine}\n`;
-          }
-        }
-        return text;
-      }
-
-      function buildPerson(id, indent) {
-        const person = people[id];
-        if (!person) return "";
-
-        let text = `${" ".repeat(indent)}${person.name}\n`;
-
-        if (person.spouseIn.length > 0) {
-          for (const famId of person.spouseIn) {
-            if (families[famId]) {
-              text += `${" ".repeat(indent)}\\\n`;
-              text += buildMarriage(famId, indent + 3);
-            }
-          }
-        }
-        return text;
-      }
-
-      // Find root families (people with no parents)
-      const roots = Object.values(people).filter(p => !p.childOf);
-
-      for (const root of roots) {
-        if (!drawn.has(root.id)) {
-          drawn.add(root.id);
-          output += buildPerson(root.id, 0);
-          output += "\n";
+    if (person.spouseIn.length > 0) {
+      for (const famId of person.spouseIn) {
+        if (families[famId]) {
+          text += `${" ".repeat(indent)}\\\n`;
+          text += drawMarriage(famId, indent + 3);
         }
       }
-
-      treeDiv.textContent = output.trim();
     }
-  </script>
+    return text;
+  }
+
+  // Find roots (people with no parents)
+  const roots = Object.values(people).filter(p => !p.childOf);
+
+  for (const root of roots) {
+    if (!drawn.has(root.id)) {
+      drawn.add(root.id);
+      output += drawPerson(root.id, 0);
+      output += "\n";
+    }
+  }
+
+  return output.trim();
+}
+
+loadGedcom();
+</script>
 </body>
 </html>
