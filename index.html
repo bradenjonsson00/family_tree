@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GEDCOM Viewer</title>
+  <script src="https://unpkg.com/@gedcom/viewer"></script>
+</head>
+<body>
+  <h1>GEDCOM Viewer</h1>
+  <div id="viewer">Loading...</div>
+
+  <script>
+    async function loadGedcom() {
+      const response = await fetch('family.ged');
+      const text = await response.text();
+      const viewerDiv = document.getElementById('viewer');
+      const viewer = new GEDCOMViewer.Viewer(viewerDiv);
+      viewer.load(text);
+    }
+
+    loadGedcom();
+  </script>
+</body>
+</html>
