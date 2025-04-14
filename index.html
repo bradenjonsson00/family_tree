@@ -39,9 +39,18 @@
 
         const gedcomText = await response.text();
         const parsedData = parseGedcom(gedcomText);
-        const rootPersonId = "@I0000@"; // Start from Braden Jonsson
 
-        const treeData = buildFullTree(rootPersonId, parsedData, new Set());
+        const visited = new Set();
+
+        // Find oldest generation: people with no parents
+        const roots = Object.values(parsedData.people).filter(p => p.families.asChild.length === 0);
+
+        const treeRoots = roots.map(person => buildPersonTree(person.id, parsedData, visited)).filter(Boolean);
+
+        const treeData = {
+          text: { name: "" }, // invisible root
+          children: treeRoots
+        };
 
         new Treant({
           chart: {
@@ -104,85 +113,45 @@
       return { people, families };
     }
 
-    function buildFullTree(personId, parsedData, visited) {
-      if (visited.has(personId)) {
-        return { text: { name: parsedData.people[personId]?.name || personId + " (loop)" } };
-      }
+    function buildPersonTree(personId, parsedData, visited) {
+      if (visited.has(personId)) return null;
       visited.add(personId);
 
       const person = parsedData.people[personId];
-      if (!person) return { text: { name: personId + " (missing)" } };
+      if (!person) return null;
 
-      const parentsNode = buildParentsMarriageNode(personId, parsedData, visited);
+      const marriages = [];
 
-      const children = [];
+      for (const famId of person.families.asSpouse) {
+        const family = parsedData.families[famId];
+        if (!family) continue;
 
-      // If person is married, build marriage node
-      if (person.families.asSpouse.length > 0) {
-        for (const famId of person.families.asSpouse) {
-          const family = parsedData.families[famId];
-          if (!family) continue;
+        const spouseId = family.husband === personId ? family.wife : family.husband;
+        const spouse = parsedData.people[spouseId];
 
-          const marriageNode = {
-            text: { name: "" }, // invisible
-            marriage: true,
-            children: []
-          };
+        const childrenNodes = family.children.map(cid => buildPersonTree(cid, parsedData, visited)).filter(Boolean);
 
-          if (family.husband && parsedData.people[family.husband]) {
-            marriageNode.children.push({ text: { name: parsedData.people[family.husband].name } });
-          }
-          if (family.wife && parsedData.people[family.wife]) {
-            marriageNode.children.push({ text: { name: parsedData.people[family.wife].name } });
-          }
-
-          const childNodes = family.children.map(cid => buildFullTree(cid, parsedData, visited));
-
-          children.push({
-            text: { name: "" },
-            children: [marriageNode, ...childNodes]
-          });
-        }
+        marriages.push({
+          text: { name: "" },
+          marriage: true,
+          children: [
+            { text: { name: person.name || personId } },
+            { text: { name: spouse?.name || spouseId || "Unknown" } },
+            ...(childrenNodes.length > 0 ? [{ text: { name: "" }, children: childrenNodes }] : [])
+          ]
+        });
       }
 
-      const node = {
-        text: { name: person.name || personId },
-        children: children
-      };
-
-      if (parentsNode) {
+      if (marriages.length > 0) {
         return {
-          text: { name: "" }, // invisible
-          children: [parentsNode, node]
+          text: { name: "" }, // invisible node
+          children: marriages
         };
       } else {
-        return node;
+        return {
+          text: { name: person.name || personId }
+        };
       }
-    }
-
-    function buildParentsMarriageNode(personId, parsedData, visited) {
-      const person = parsedData.people[personId];
-      if (!person) return null;
-      if (person.families.asChild.length === 0) return null;
-
-      const familyId = person.families.asChild[0];
-      const family = parsedData.families[familyId];
-      if (!family) return null;
-
-      const marriageNode = {
-        text: { name: "" },
-        marriage: true,
-        children: []
-      };
-
-      if (family.husband && parsedData.people[family.husband]) {
-        marriageNode.children.push(buildFullTree(family.husband, parsedData, visited));
-      }
-      if (family.wife && parsedData.people[family.wife]) {
-        marriageNode.children.push(buildFullTree(family.wife, parsedData, visited));
-      }
-
-      return marriageNode;
     }
 
     loadGedcom();
