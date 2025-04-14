@@ -41,7 +41,8 @@
         const parsedData = parseGedcom(gedcomText);
         const rootPersonId = "@I0000@"; // Start from Braden Jonsson
 
-        const treeData = buildFamilyTree(rootPersonId, parsedData);
+        const rootFamily = findFamilyOfChild(rootPersonId, parsedData);
+        const treeData = buildFamilyNode(rootFamily, parsedData);
 
         new Treant({
           chart: {
@@ -104,85 +105,55 @@
       return { people, families };
     }
 
-    function buildFamilyTree(personId, parsedData) {
+    function findFamilyOfChild(personId, parsedData) {
       const person = parsedData.people[personId];
       if (!person) return null;
-
-      // Find the family where this person is a child
       if (person.families.asChild.length > 0) {
         const familyId = person.families.asChild[0];
-        const family = parsedData.families[familyId];
-        if (family) {
-          // Create a marriage node for the parents
-          const parentsMarriage = {
-            text: { name: "" },
-            marriage: true,
-            children: []
-          };
-
-          if (family.husband && parsedData.people[family.husband]) {
-            parentsMarriage.children.push(buildIndividualNode(family.husband, parsedData));
-          }
-          if (family.wife && parsedData.people[family.wife]) {
-            parentsMarriage.children.push(buildIndividualNode(family.wife, parsedData));
-          }
-
-          // Children under parents
-          const childrenNodes = family.children.map(childId => {
-            return buildIndividualNode(childId, parsedData);
-          });
-
-          return {
-            text: { name: "" }, // Invisible root
-            children: [
-              parentsMarriage,
-              {
-                text: { name: "" },
-                children: childrenNodes
-              }
-            ]
-          };
-        }
+        return parsedData.families[familyId];
       }
-
-      return buildIndividualNode(personId, parsedData);
+      return null;
     }
 
-    function buildIndividualNode(personId, parsedData) {
-      const person = parsedData.people[personId];
-      if (!person) return null;
+    function buildFamilyNode(family, parsedData) {
+      if (!family) return null;
 
-      const node = {
-        text: { name: person.name || personId },
+      const nodes = [];
+      if (family.husband && parsedData.people[family.husband]) {
+        nodes.push({ text: { name: parsedData.people[family.husband].name } });
+      }
+      if (family.wife && parsedData.people[family.wife]) {
+        nodes.push({ text: { name: parsedData.people[family.wife].name } });
+      }
+
+      const marriageNode = {
+        text: { name: "" },
+        marriage: true,
         children: []
       };
 
-      // Find families where this person is a husband or wife
-      for (const [famId, family] of Object.entries(parsedData.families)) {
-        if (family.husband === personId || family.wife === personId) {
-          const marriageNode = {
-            text: { name: "" },
-            marriage: true,
-            children: []
+      marriageNode.children = nodes;
+
+      const childrenNodes = family.children.map(childId => {
+        const child = parsedData.people[childId];
+        if (!child) return null;
+
+        // Check if this child is married later
+        if (child.families.asSpouse.length > 0) {
+          const childFamilyId = child.families.asSpouse[0];
+          const childFamily = parsedData.families[childFamilyId];
+          return buildFamilyNode(childFamily, parsedData);
+        } else {
+          return {
+            text: { name: child.name }
           };
-
-          if (family.husband && parsedData.people[family.husband]) {
-            marriageNode.children.push({ text: { name: parsedData.people[family.husband].name } });
-          }
-          if (family.wife && parsedData.people[family.wife]) {
-            marriageNode.children.push({ text: { name: parsedData.people[family.wife].name } });
-          }
-
-          const childrenNodes = family.children.map(childId => buildIndividualNode(childId, parsedData));
-
-          node.children.push({
-            text: { name: "" },
-            children: [marriageNode, ...childrenNodes]
-          });
         }
-      }
+      }).filter(n => n !== null);
 
-      return node;
+      return {
+        text: { name: "" }, // hidden
+        children: [marriageNode, ...childrenNodes]
+      };
     }
 
     loadGedcom();
