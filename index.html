@@ -9,12 +9,18 @@
       white-space: pre;
       padding: 20px;
     }
+    .timestamp {
+      font-size: 0.8em;
+      color: #888;
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
 
 <h1>Family Tree</h1>
 <pre id="tree"></pre>
+<div class="timestamp" id="timestamps"></div>
 
 <script type="module">
 import { parseGEDCOM } from './parse_gedcom.js';
@@ -29,6 +35,29 @@ async function main() {
   const treeText = buildTree(individuals, families, topAncestors);
 
   document.getElementById('tree').textContent = treeText;
+  
+  showTimestamps([
+    './parse_gedcom.js',
+    './find_top_ancestors.js',
+    './build_tree.js'
+  ]);
+}
+
+async function showTimestamps(files) {
+  const timestampDiv = document.getElementById('timestamps');
+  const lines = [];
+
+  for (const file of files) {
+    try {
+      const response = await fetch(file, { method: 'HEAD' });
+      const lastModified = response.headers.get('Last-Modified');
+      lines.push(`${file}: ${lastModified || 'unknown'}`);
+    } catch (e) {
+      lines.push(`${file}: unknown`);
+    }
+  }
+
+  timestampDiv.textContent = "Last Updated:\n" + lines.join("\n");
 }
 
 main();
