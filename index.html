@@ -16,178 +16,19 @@
 <h1>Family Tree</h1>
 <pre id="tree"></pre>
 
-<script>
-async function loadGEDCOM() {
-  const response = await fetch('family_tree.ged');
-  const text = await response.text();
-  return text;
-}
-
-function parseGEDCOM(text) {
-  const lines = text.split('\n').map(line => line.trim());
-  const individuals = {};
-  const families = {};
-
-  let currentId = null;
-  let currentFam = null;
-
-  for (const line of lines) {
-    const indiMatch = line.match(/^0\s+(@I\d+@)\s+INDI/);
-    const famMatch = line.match(/^0\s+(@F\d+@)\s+FAM/);
-
-    if (indiMatch) {
-      currentId = indiMatch[1];
-    } else if (famMatch) {
-      currentFam = famMatch[1];
-    } else if (line.startsWith('1 NAME') && currentId) {
-      let name = line.substring(7).replace(/\//g, '').trim();
-      if (name.length > 15) name = name.substring(0, 14) + '…';
-      individuals[currentId] = { name, parents: [], families: [] };
-    } else if (line.startsWith('1 FAMC') && currentId) {
-      const famc = line.split(' ').pop();
-      individuals[currentId].parents.push(famc);
-    } else if (line.startsWith('1 FAMS') && currentId) {
-      const fams = line.split(' ').pop();
-      individuals[currentId].families.push(fams);
-    } else if (line.startsWith('1 HUSB') && currentFam) {
-      families[currentFam] = families[currentFam] || {};
-      families[currentFam].husb = line.split(' ').pop();
-    } else if (line.startsWith('1 WIFE') && currentFam) {
-      families[currentFam] = families[currentFam] || {};
-      families[currentFam].wife = line.split(' ').pop();
-    } else if (line.startsWith('1 CHIL') && currentFam) {
-      families[currentFam] = families[currentFam] || {};
-      families[currentFam].chil = families[currentFam].chil || [];
-      families[currentFam].chil.push(line.split(' ').pop());
-    }
-  }
-
-  return { individuals, families };
-}
-
-function getName(individuals, id) {
-  return individuals[id] ? individuals[id].name : '?';
-}
-
-// Find the topmost ancestors by walking up
-function findAllAncestors(individuals, families, startId) {
-  const ancestors = new Set();
-  const queue = [startId];
-
-  while (queue.length) {
-    const current = queue.shift();
-    const indi = individuals[current];
-    if (!indi) continue;
-    for (const parentFamId of indi.parents) {
-      const fam = families[parentFamId];
-      if (fam) {
-        if (fam.husb) {
-          ancestors.add(fam.husb);
-          queue.push(fam.husb);
-        }
-        if (fam.wife) {
-          ancestors.add(fam.wife);
-          queue.push(fam.wife);
-        }
-      }
-    }
-  }
-
-  return Array.from(ancestors);
-}
-
-// Build the tree including both bloodline and spouse ancestry
-function buildTree(individuals, families, startId) {
-  const output = [];
-  const generations = [];
-
-  let queue = [{ indiId: startId, level: 0 }];
-  const seen = new Set();
-
-  while (queue.length) {
-    const nextQueue = [];
-    const generation = [];
-
-    for (const { indiId } of queue) {
-      if (seen.has(indiId)) continue;
-      seen.add(indiId);
-
-      const indi = individuals[indiId];
-      if (!indi) continue;
-
-      if (indi.families.length) {
-        for (const famId of indi.families) {
-          const fam = families[famId];
-          if (fam) {
-            const husb = getName(individuals, fam.husb);
-            const wife = getName(individuals, fam.wife);
-            generation.push(`${husb} +++ ${wife}`);
-
-            // Also look for husband and wife's parents
-            const husbParents = fam.husb ? individuals[fam.husb].parents : [];
-            const wifeParents = fam.wife ? individuals[fam.wife].parents : [];
-
-            for (const parentFamId of husbParents) {
-              const parentFam = families[parentFamId];
-              if (parentFam) {
-                nextQueue.unshift({ indiId: parentFam.husb });
-                nextQueue.unshift({ indiId: parentFam.wife });
-              }
-            }
-            for (const parentFamId of wifeParents) {
-              const parentFam = families[parentFamId];
-              if (parentFam) {
-                nextQueue.unshift({ indiId: parentFam.husb });
-                nextQueue.unshift({ indiId: parentFam.wife });
-              }
-            }
-
-            // Process children normally
-            if (fam.chil && fam.chil.length) {
-              for (const childId of fam.chil) {
-                nextQueue.push({ indiId: childId });
-              }
-            }
-          }
-        }
-      } else {
-        generation.push(getName(individuals, indiId));
-      }
-    }
-
-    if (generation.length) {
-      generations.unshift(generation); // insert at start (since we are walking backwards now)
-    }
-    queue = nextQueue;
-  }
-
-  // Now format the generations
-  for (let i = 0; i < generations.length; i++) {
-    const line = generations[i].join("            ");
-    output.push(line);
-
-    if (i < generations.length - 1) {
-      if (generations[i + 1].length === 1) {
-        output.push(" ".repeat(line.length / 2) + "|");
-      } else {
-        const mid = Math.floor(line.length / 2);
-        output.push(" ".repeat(mid - 1) + "\\" + " ".repeat(2) + "/");
-        output.push(" ".repeat(mid - 10) + "-".repeat(20));
-      }
-    }
-  }
-
-  return output.join("\n");
-}
+<script type="module">
+import { parseGEDCOM } from './parse_gedcom.js';
+import { findTopAncestors } from './find_top_ancestors.js';
+import { buildTree } from './build_tree.js';
 
 async function main() {
-  const gedcom = await loadGEDCOM();
-  const { individuals, families } = await parseGEDCOM(gedcom);
+  const { individuals, families } = await parseGEDCOM('family_tree.ged');
+  const bradenId = "@I0000@";
 
-  const bradenId = "@I0000@"; // starting person Braden
-  const tree = buildTree(individuals, families, bradenId);
+  const topAncestors = findTopAncestors(individuals, families, bradenId);
+  const treeText = buildTree(individuals, families, topAncestors);
 
-  document.getElementById('tree').textContent = tree;
+  document.getElementById('tree').textContent = treeText;
 }
 
 main();
