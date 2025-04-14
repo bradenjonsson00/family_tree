@@ -11,7 +11,7 @@
 
   <script>
     async function loadGedcom() {
-      const response = await fetch('family.ged');
+      const response = await fetch('family_tree.ged');
       const text = await response.text();
       const viewerDiv = document.getElementById('viewer');
       const viewer = new GEDCOMViewer.Viewer(viewerDiv);
