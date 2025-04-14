@@ -33,6 +33,13 @@ export function buildTree(individuals, families, startId) {
   }
 
   climb(startId); // Start climbing from Braden
+  console.log("Parent Map:", parentMap);
+  console.log("Child Map:", childMap);
+
+  document.getElementById('tree').textContent =
+    "Parent Map:\n" + JSON.stringify(parentMap, null, 2) +
+    "\n\nChild Map:\n" + JSON.stringify(childMap, null, 2);
+
 
   // Find all root ancestors (those who have no parents)
   const roots = new Set();
