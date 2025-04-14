@@ -108,12 +108,48 @@
       const person = parsedData.people[personId];
       if (!person) return null;
 
+      // If person has parents (FAMC)
+      if (person.families.asChild.length > 0) {
+        const familyId = person.families.asChild[0];
+        const family = parsedData.families[familyId];
+        if (family) {
+          const parentNode = {
+            text: { name: "Parents" },
+            children: []
+          };
+          if (family.husband && parsedData.people[family.husband]) {
+            parentNode.children.push({
+              text: { name: parsedData.people[family.husband].name || family.husband }
+            });
+          }
+          if (family.wife && parsedData.people[family.wife]) {
+            parentNode.children.push({
+              text: { name: parsedData.people[family.wife].name || family.wife }
+            });
+          }
+
+          const siblings = family.children.map(childId => {
+            const child = parsedData.people[childId];
+            return {
+              text: { name: child.name || childId }
+            };
+          });
+
+          parentNode.children.push({
+            text: { name: "Children" },
+            children: siblings
+          });
+
+          return parentNode;
+        }
+      }
+
+      // Otherwise, if person is a parent, draw them and their kids
       const node = {
         text: { name: person.name || personId },
         children: []
       };
 
-      // Look for families where this person is a husband or wife
       for (const [famId, family] of Object.entries(parsedData.families)) {
         if (family.husband === personId || family.wife === personId) {
           for (const childId of family.children) {
