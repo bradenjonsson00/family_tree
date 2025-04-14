@@ -39,63 +39,77 @@ async function loadGedcom() {
 
     const gedcomText = await response.text();
     const parsedData = parseGedcom(gedcomText);
-    const nodes = {}; // store all people nodes once
-    const marriages = []; // marriage nodes
 
-    // Create nodes for all individuals
+    const peopleNodes = {}; // 1 node per person
+    const marriageNodes = {}; // 1 marriage node per family
+    const parentsMap = {}; // map child id -> marriage node id (their parents)
+
+    // Create person nodes
     for (const [id, person] of Object.entries(parsedData.people)) {
-      nodes[id] = { text: { name: person.name || id } };
+      peopleNodes[id] = { id: id, text: { name: person.name || id } };
     }
 
     // Create marriage nodes
     for (const [famId, family] of Object.entries(parsedData.families)) {
       if (!family.husband || !family.wife) continue;
 
-      const marriageNode = {
-        text: { name: "" }, // invisible marriage node
+      const marriageNodeId = `marriage_${famId}`;
+      marriageNodes[famId] = {
+        id: marriageNodeId,
+        text: { name: "" },
         marriage: true,
-        children: [nodes[family.husband], nodes[family.wife]]
+        children: [
+          peopleNodes[family.husband],
+          peopleNodes[family.wife]
+        ]
       };
 
-      nodes[famId] = marriageNode;
-
-      // Link children to marriage node
+      // Link children to their parents' marriage node
       for (const childId of family.children) {
-        if (nodes[childId]) {
-          if (!marriageNode.childrenTree) marriageNode.childrenTree = [];
-          marriageNode.childrenTree.push(nodes[childId]);
-        }
-      }
-
-      marriages.push(famId);
-    }
-
-    // Find top-level nodes (people with no parents)
-    const topNodes = [];
-
-    for (const [id, node] of Object.entries(nodes)) {
-      const person = parsedData.people[id];
-      if (person && person.families.asChild.length === 0) {
-        topNodes.push(node);
+        parentsMap[childId] = marriageNodeId;
       }
     }
 
-    // Build the full structure
-    const fullTree = {
+    // Build tree structure
+    const nodes = { ...peopleNodes, ...marriageNodes };
+    const nodeLinks = {}; // id -> list of child nodes
+
+    for (const [childId, parentMarriageId] of Object.entries(parentsMap)) {
+      if (!nodeLinks[parentMarriageId]) {
+        nodeLinks[parentMarriageId] = [];
+      }
+      nodeLinks[parentMarriageId].push(nodes[childId]);
+    }
+
+    // Attach children under marriage nodes
+    for (const [marriageId, children] of Object.entries(nodeLinks)) {
+      if (!nodes[marriageId].children) {
+        nodes[marriageId].children = [];
+      }
+      nodes[marriageId].children.push({
+        text: { name: "" }, // invisible
+        children: children
+      });
+    }
+
+    // Find roots (marriages with no parents above)
+    const rootNodes = [];
+
+    for (const [famId, marriageNode] of Object.entries(marriageNodes)) {
+      const husband = parsedData.families[famId].husband;
+      const wife = parsedData.families[famId].wife;
+      if (
+        (!parentsMap[husband]) &&
+        (!parentsMap[wife])
+      ) {
+        rootNodes.push(marriageNode);
+      }
+    }
+
+    const treeStructure = {
       text: { name: "" },
-      children: []
+      children: rootNodes
     };
-
-    for (const famId of marriages) {
-      const marriage = nodes[famId];
-      if (marriage.childrenTree && marriage.childrenTree.length > 0) {
-        marriage.children.push({
-          text: { name: "" },
-          children: marriage.childrenTree
-        });
-      }
-      fullTree.children.push(marriage);
-    }
 
     new Treant({
       chart: {
@@ -103,7 +117,7 @@ async function loadGedcom() {
         node: { collapsable: true },
         animation: { nodeAnimation: "easeOutBounce", nodeSpeed: 700, connectorsAnimation: "bounce", connectorsSpeed: 700 },
       },
-      nodeStructure: fullTree
+      nodeStructure: treeStructure
     });
 
   } catch (error) {
