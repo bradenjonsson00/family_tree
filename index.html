@@ -2,177 +2,144 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Family Tree Viewer</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/raphael/2.3.0/raphael.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.min.js"></script>
+  <title>Family Tree Viewer (Text)</title>
   <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      font-family: Arial, sans-serif;
+    body {
+      font-family: monospace;
+      white-space: pre;
       background: #f9f9f9;
+      padding: 20px;
     }
     #tree {
-      width: 100%;
-      height: 100%;
-      overflow: auto;
-    }
-    #tree-simple {
-      width: 100%;
-      height: 100%;
+      font-size: 14px;
     }
   </style>
 </head>
 <body>
-<div id="tree">
-  <div id="tree-simple"></div>
-</div>
+  <h2>Family Tree</h2>
+  <input type="file" id="fileInput" accept=".ged">
+  <div id="tree">Upload a .ged file to view the family tree.</div>
 
-<script>
-async function loadGedcom() {
-  try {
-    const response = await fetch('family_tree.txt');
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    const gedcomText = await response.text();
-    const parsedData = parseGedcom(gedcomText);
-
-    const peopleNodes = {}; // 1 node per person
-    const marriageNodes = {}; // 1 marriage node per family
-    const parentsMap = {}; // map child id -> marriage node id (their parents)
-
-    // Create person nodes
-    for (const [id, person] of Object.entries(parsedData.people)) {
-      peopleNodes[id] = { id: id, text: { name: person.name || id } };
-    }
-
-    // Create marriage nodes
-    for (const [famId, family] of Object.entries(parsedData.families)) {
-      if (!family.husband || !family.wife) continue;
-
-      const marriageNodeId = `marriage_${famId}`;
-      marriageNodes[famId] = {
-        id: marriageNodeId,
-        text: { name: "" },
-        marriage: true,
-        children: [
-          peopleNodes[family.husband],
-          peopleNodes[family.wife]
-        ]
+  <script>
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const gedcom = e.target.result;
+        drawTree(parseGedcom(gedcom));
       };
-
-      // Link children to their parents' marriage node
-      for (const childId of family.children) {
-        parentsMap[childId] = marriageNodeId;
-      }
-    }
-
-    // Build tree structure
-    const nodes = { ...peopleNodes, ...marriageNodes };
-    const nodeLinks = {}; // id -> list of child nodes
-
-    for (const [childId, parentMarriageId] of Object.entries(parentsMap)) {
-      if (!nodeLinks[parentMarriageId]) {
-        nodeLinks[parentMarriageId] = [];
-      }
-      nodeLinks[parentMarriageId].push(nodes[childId]);
-    }
-
-    // Attach children under marriage nodes
-    for (const [marriageId, children] of Object.entries(nodeLinks)) {
-      if (!nodes[marriageId].children) {
-        nodes[marriageId].children = [];
-      }
-      nodes[marriageId].children.push({
-        text: { name: "" }, // invisible
-        children: children
-      });
-    }
-
-    // Find roots (marriages with no parents above)
-    const rootNodes = [];
-
-    for (const [famId, marriageNode] of Object.entries(marriageNodes)) {
-      const husband = parsedData.families[famId].husband;
-      const wife = parsedData.families[famId].wife;
-      if (
-        (!parentsMap[husband]) &&
-        (!parentsMap[wife])
-      ) {
-        rootNodes.push(marriageNode);
-      }
-    }
-
-    const treeStructure = {
-      text: { name: "" },
-      children: rootNodes
-    };
-
-    new Treant({
-      chart: {
-        container: "#tree-simple",
-        node: { collapsable: true },
-        animation: { nodeAnimation: "easeOutBounce", nodeSpeed: 700, connectorsAnimation: "bounce", connectorsSpeed: 700 },
-      },
-      nodeStructure: treeStructure
+      reader.readAsText(file);
     });
 
-  } catch (error) {
-    console.error('Failed to load GEDCOM:', error);
-    document.getElementById('tree').innerHTML = `<p style="color: red;">Error loading GEDCOM file: ${error.message}</p>`;
-  }
-}
+    function parseGedcom(text) {
+      const people = {};
+      const families = {};
+      let currentPerson = null;
+      let currentFamily = null;
+      const lines = text.split(/\r?\n/);
 
-function parseGedcom(gedcom) {
-  const people = {};
-  const families = {};
+      for (const line of lines) {
+        const parts = line.trim().split(" ");
+        if (parts.length < 2) continue;
+        const level = parts[0];
+        const pointerOrTag = parts[1];
+        const tagOrValue = parts[2];
+        const value = parts.slice(3).join(" ");
 
-  const lines = gedcom.split('\n');
-  let currentIndividual = null;
-  let currentFamily = null;
-
-  for (let line of lines) {
-    line = line.trim();
-    if (!line) continue;
-
-    const match = line.match(/^(\d+) +(@[^@]+@)? *([A-Z]+) *(.*)$/);
-    if (!match) continue;
-
-    const level = match[1];
-    const pointer = match[2];
-    const tag = match[3];
-    const value = match[4];
-
-    if (tag === "INDI") {
-      currentIndividual = pointer;
-      people[currentIndividual] = { id: currentIndividual, name: "", gender: "male", families: { asSpouse: [], asChild: [] } };
-    } else if (tag === "NAME" && currentIndividual) {
-      people[currentIndividual].name = value.replace(/\//g, '').trim();
-    } else if (tag === "SEX" && currentIndividual) {
-      people[currentIndividual].gender = (value === "M") ? "male" : "female";
-    } else if (tag === "FAMC" && currentIndividual) {
-      people[currentIndividual].families.asChild.push(value);
-    } else if (tag === "FAMS" && currentIndividual) {
-      people[currentIndividual].families.asSpouse.push(value);
-    } else if (tag === "FAM") {
-      currentFamily = pointer;
-      families[currentFamily] = { husband: null, wife: null, children: [] };
-    } else if (tag === "HUSB" && currentFamily) {
-      families[currentFamily].husband = value;
-    } else if (tag === "WIFE" && currentFamily) {
-      families[currentFamily].wife = value;
-    } else if (tag === "CHIL" && currentFamily) {
-      families[currentFamily].children.push(value);
+        if (tagOrValue === "INDI") {
+          currentPerson = pointerOrTag;
+          people[currentPerson] = { id: currentPerson, name: "", childOf: null, spouseIn: [] };
+        } else if (tagOrValue === "FAM") {
+          currentFamily = pointerOrTag;
+          families[currentFamily] = { husband: null, wife: null, children: [] };
+        } else if (currentPerson) {
+          if (pointerOrTag === "NAME") {
+            people[currentPerson].name = value.replace(/\//g, '').trim();
+          } else if (pointerOrTag === "FAMC") {
+            people[currentPerson].childOf = value;
+          } else if (pointerOrTag === "FAMS") {
+            people[currentPerson].spouseIn.push(value);
+          }
+        } else if (currentFamily) {
+          if (pointerOrTag === "HUSB") {
+            families[currentFamily].husband = value;
+          } else if (pointerOrTag === "WIFE") {
+            families[currentFamily].wife = value;
+          } else if (pointerOrTag === "CHIL") {
+            families[currentFamily].children.push(value);
+          }
+        }
+      }
+      return { people, families };
     }
-  }
 
-  return { people, families };
-}
+    function drawTree({ people, families }) {
+      const treeDiv = document.getElementById('tree');
+      const drawn = new Set();
+      let output = "";
 
-loadGedcom();
-</script>
+      function getName(id) {
+        return people[id] ? people[id].name : "Unknown";
+      }
+
+      function buildMarriage(famId, indent) {
+        const fam = families[famId];
+        if (!fam) return "";
+
+        const husb = getName(fam.husband);
+        const wife = getName(fam.wife);
+
+        let text = `${" ".repeat(indent)}${husb} +++ ${wife}\n`;
+
+        if (fam.children.length > 0) {
+          if (fam.children.length === 1) {
+            const childId = fam.children[0];
+            if (!drawn.has(childId)) {
+              drawn.add(childId);
+              text += `${" ".repeat(indent + 12)}\\\n`;
+              text += buildPerson(childId, indent + 15);
+            }
+          } else {
+            text += `${" ".repeat(indent + 12)}|\n`;
+            text += `${" ".repeat(indent + 5)}---------------------------------------------\n`;
+            let childrenLine = fam.children.map(id => getName(id)).join('   ');
+            text += `${" ".repeat(indent + 5)}${childrenLine}\n`;
+          }
+        }
+        return text;
+      }
+
+      function buildPerson(id, indent) {
+        const person = people[id];
+        if (!person) return "";
+
+        let text = `${" ".repeat(indent)}${person.name}\n`;
+
+        if (person.spouseIn.length > 0) {
+          for (const famId of person.spouseIn) {
+            if (families[famId]) {
+              text += `${" ".repeat(indent)}\\\n`;
+              text += buildMarriage(famId, indent + 3);
+            }
+          }
+        }
+        return text;
+      }
+
+      // Find root families (people with no parents)
+      const roots = Object.values(people).filter(p => !p.childOf);
+
+      for (const root of roots) {
+        if (!drawn.has(root.id)) {
+          drawn.add(root.id);
+          output += buildPerson(root.id, 0);
+          output += "\n";
+        }
+      }
+
+      treeDiv.textContent = output.trim();
+    }
+  </script>
 </body>
 </html>
