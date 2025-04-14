@@ -80,34 +80,47 @@ function parseGEDCOM(text) {
   return { individuals, families };
 }
 
-function generateTree(individuals, families) {
-  const getName = id => individuals[id] ? individuals[id].name : '?';
+function getName(individuals, id) {
+  return individuals[id] ? individuals[id].name : '?';
+}
 
-  const husband1 = getName(families["@F0002@"].husb);
-  const wife1 = getName(families["@F0002@"].wife);
-  const husband2 = getName(families["@F0001@"].husb);
-  const wife2 = getName(families["@F0001@"].wife);
+// Walk up the tree recursively
+function buildTree(individuals, startIds, level = 0) {
+  let output = "";
+  let nextLevel = [];
 
-  const father = getName(families["@F0000@"].husb);
-  const mother = getName(families["@F0000@"].wife);
+  for (let id of startIds) {
+    const indi = individuals[id];
+    if (!indi) continue;
 
-  const children = (families["@F0000@"].chil || []).map(getName);
+    // Print parents if they exist
+    const famc = indi.parents[0];
+    if (famc && families[famc]) {
+      const fatherId = families[famc].husb;
+      const motherId = families[famc].wife;
+      if (fatherId && motherId) {
+        output += " ".repeat(level * 4) + getName(individuals, fatherId) + " +++ " + getName(individuals, motherId) + "\n";
+        nextLevel.push(fatherId, motherId);
+      }
+    }
+  }
 
-  let tree = "";
-  tree += `${husband1} +++ ${wife1}`.padEnd(50) + `${husband2} +++ ${wife2}\n`;
-  tree += " ".repeat(20) + "\\".padEnd(30) + "/\n";
-  tree += " ".repeat(26) + `${father} +++ ${mother}\n`;
-  tree += " ".repeat(30) + "|\n";
-  tree += " ".repeat(10) + "-".repeat(45) + "\n";
-  tree += " ".repeat(10) + children.join(" | ") + "\n";
+  if (nextLevel.length > 0) {
+    output += buildTree(individuals, nextLevel, level + 1);
+  }
 
-  return tree;
+  return output;
 }
 
 async function main() {
   const gedcom = await loadGEDCOM();
-  const { individuals, families } = await parseGEDCOM(gedcom);
-  const tree = generateTree(individuals, families);
+  const { individuals, families: fams } = await parseGEDCOM(gedcom);
+  window.families = fams; // so buildTree can access it
+
+  // Start from Braden Jonsson
+  const startId = Object.keys(individuals).find(id => individuals[id].name.startsWith("Braden"));
+  const tree = buildTree(individuals, [startId]);
+
   document.getElementById('tree').textContent = tree;
 }
 
