@@ -75,7 +75,7 @@ export function buildTree(individuals, families, startId) {
 
   for (let i = 0; i < generations.length; i++) {
     const gen = generations[i];
-    const line = gen.map(id => formatPerson(individuals, id)).join("            ");
+    const line = gen.map(id => formatPerson(individuals, id)).join("             ");
     output.push(line);
 
     if (i < generations.length - 1) {
