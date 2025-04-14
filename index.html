@@ -41,7 +41,7 @@
         const parsedData = parseGedcom(gedcomText);
         const rootPersonId = "@I0000@"; // Start from Braden Jonsson
 
-        const treeData = buildTreantNode(rootPersonId, parsedData);
+        const treeData = buildFamilyTree(rootPersonId, parsedData);
 
         new Treant({
           chart: {
@@ -68,15 +68,15 @@
 
       for (let line of lines) {
         line = line.trim();
-        if (!line) continue;  // skip empty lines
+        if (!line) continue;
 
         const match = line.match(/^(\d+) +(@[^@]+@)? *([A-Z]+) *(.*)$/);
         if (!match) continue;
 
         const level = match[1];
-        const pointer = match[2];  // like @I0000@
-        const tag = match[3];      // like NAME
-        const value = match[4];    // like Braden /Jonsson/
+        const pointer = match[2];
+        const tag = match[3];
+        const value = match[4];
 
         if (tag === "INDI") {
           currentIndividual = pointer;
@@ -104,60 +104,81 @@
       return { people, families };
     }
 
-    function buildTreantNode(personId, parsedData) {
+    function buildFamilyTree(personId, parsedData) {
       const person = parsedData.people[personId];
       if (!person) return null;
 
-      // If person has parents (FAMC)
+      // Find the family where this person is a child
       if (person.families.asChild.length > 0) {
         const familyId = person.families.asChild[0];
         const family = parsedData.families[familyId];
         if (family) {
-          const parentNode = {
-            text: { name: "Parents" },
+          // Create a marriage node for the parents
+          const parentsMarriage = {
+            text: { name: "" },
+            marriage: true,
             children: []
           };
+
           if (family.husband && parsedData.people[family.husband]) {
-            parentNode.children.push({
-              text: { name: parsedData.people[family.husband].name || family.husband }
-            });
+            parentsMarriage.children.push(buildIndividualNode(family.husband, parsedData));
           }
           if (family.wife && parsedData.people[family.wife]) {
-            parentNode.children.push({
-              text: { name: parsedData.people[family.wife].name || family.wife }
-            });
+            parentsMarriage.children.push(buildIndividualNode(family.wife, parsedData));
           }
 
-          const siblings = family.children.map(childId => {
-            const child = parsedData.people[childId];
-            return {
-              text: { name: child.name || childId }
-            };
+          // Children under parents
+          const childrenNodes = family.children.map(childId => {
+            return buildIndividualNode(childId, parsedData);
           });
 
-          parentNode.children.push({
-            text: { name: "Children" },
-            children: siblings
-          });
-
-          return parentNode;
+          return {
+            text: { name: "" }, // Invisible root
+            children: [
+              parentsMarriage,
+              {
+                text: { name: "" },
+                children: childrenNodes
+              }
+            ]
+          };
         }
       }
 
-      // Otherwise, if person is a parent, draw them and their kids
+      return buildIndividualNode(personId, parsedData);
+    }
+
+    function buildIndividualNode(personId, parsedData) {
+      const person = parsedData.people[personId];
+      if (!person) return null;
+
       const node = {
         text: { name: person.name || personId },
         children: []
       };
 
+      // Find families where this person is a husband or wife
       for (const [famId, family] of Object.entries(parsedData.families)) {
         if (family.husband === personId || family.wife === personId) {
-          for (const childId of family.children) {
-            const childNode = buildTreantNode(childId, parsedData);
-            if (childNode) {
-              node.children.push(childNode);
-            }
+          const marriageNode = {
+            text: { name: "" },
+            marriage: true,
+            children: []
+          };
+
+          if (family.husband && parsedData.people[family.husband]) {
+            marriageNode.children.push({ text: { name: parsedData.people[family.husband].name } });
           }
+          if (family.wife && parsedData.people[family.wife]) {
+            marriageNode.children.push({ text: { name: parsedData.people[family.wife].name } });
+          }
+
+          const childrenNodes = family.children.map(childId => buildIndividualNode(childId, parsedData));
+
+          node.children.push({
+            text: { name: "" },
+            children: [marriageNode, ...childrenNodes]
+          });
         }
       }
 
