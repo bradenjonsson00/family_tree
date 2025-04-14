@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <title>Family Tree Viewer</title>
-  <script src="https://balkangraph.com/js/latest/FamilyTree.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/raphael/2.3.0/raphael.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.min.js"></script>
   <style>
     html, body {
       height: 100%;
@@ -13,28 +15,30 @@
     #tree {
       width: 100%;
       height: 100%;
+      overflow: auto;
+    }
+    #tree-simple {
+      width: 100%;
+      height: 100%;
     }
   </style>
 </head>
 <body>
-  <div id="tree"></div>
+  <div id="tree">
+    <div id="tree-simple"></div>
+  </div>
 
   <script>
     async function loadGedcom() {
       try {
-        const response = await fetch('family_tree.txt');  // <- use .txt
+        const response = await fetch('family_tree.txt');  // still using .txt
         if (!response.ok) {
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
 
         const gedcomText = await response.text();
-
         const data = parseGedcom(gedcomText);
-
-        FamilyTree.init(document.getElementById("tree"), {
-          template: "ana", // nice template
-          nodes: data
-        });
+        createTree(data);
 
       } catch (error) {
         console.error('Failed to load GEDCOM:', error);
@@ -47,7 +51,6 @@
       const families = {};
 
       const lines = gedcom.split('\n');
-
       let currentIndividual = null;
       let currentFamily = null;
 
@@ -60,18 +63,14 @@
 
         if (tag === "INDI") {
           currentIndividual = parts[1];
-          people[currentIndividual] = { id: currentIndividual, pids: [], mid: null, fid: null, name: "" };
+          people[currentIndividual] = { id: currentIndividual, name: "", gender: "male" };
         } else if (tag === "NAME" && currentIndividual) {
           people[currentIndividual].name = value.replace(/\//g, '');
         } else if (tag === "SEX" && currentIndividual) {
           people[currentIndividual].gender = (value === "M") ? "male" : "female";
-        } else if (tag === "FAMC" && currentIndividual) {
-          people[currentIndividual].fid = value;
-        } else if (tag === "FAMS" && currentIndividual) {
-          people[currentIndividual].mid = value;
         } else if (tag === "FAM") {
           currentFamily = parts[1];
-          families[currentFamily] = { id: currentFamily, husband: null, wife: null, children: [] };
+          families[currentFamily] = { husband: null, wife: null, children: [] };
         } else if (tag === "HUSB" && currentFamily) {
           families[currentFamily].husband = value;
         } else if (tag === "WIFE" && currentFamily) {
@@ -81,34 +80,43 @@
         }
       }
 
+      // Find the root person (first without parents)
+      let rootId = Object.keys(people)[0];
+
       const nodes = [];
 
-      for (const [id, person] of Object.entries(people)) {
-        const node = {
-          id: id,
-          name: person.name || id,
-          gender: person.gender || "male"
-        };
-        nodes.push(node);
-      }
+      function buildTree(personId) {
+        const person = people[personId];
+        const children = [];
 
-      for (const [fid, fam] of Object.entries(families)) {
-        if (fam.husband && fam.wife) {
-          nodes.push({
-            id: fid,
-            marriage: true,
-            spouses: [fam.husband, fam.wife]
-          });
-        }
-        for (const child of fam.children) {
-          const childNode = nodes.find(n => n.id === child);
-          if (childNode) {
-            childNode.parents = [fid];
+        for (const fam of Object.values(families)) {
+          if (fam.husband === personId || fam.wife === personId) {
+            for (const childId of fam.children) {
+              children.push(buildTree(childId));
+            }
           }
         }
+
+        const node = {
+          text: { name: person.name },
+          children: children
+        };
+
+        return node;
       }
 
-      return nodes;
+      return buildTree(rootId);
+    }
+
+    function createTree(treeData) {
+      new Treant({
+        chart: {
+          container: "#tree-simple",
+          node: { collapsable: true },
+          animation: { nodeAnimation: "easeOutBounce", nodeSpeed: 700, connectorsAnimation: "bounce", connectorsSpeed: 700 },
+        },
+        nodeStructure: treeData
+      });
     }
 
     loadGedcom();
