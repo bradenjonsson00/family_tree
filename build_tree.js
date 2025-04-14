@@ -1,68 +1,94 @@
-export function buildTree(individuals, families, ancestorIds) {
-  const output = [];
+export function buildTree(individuals, families, startId) {
+  const parentMap = {};
+  const childMap = {};
+
+  // Build parent relationships starting from Braden
+  function climb(id) {
+    const person = individuals[id];
+    if (!person) return;
+
+    if (person.parents.length > 0) {
+      const fam = families[person.parents[0]];
+      if (fam) {
+        parentMap[id] = {
+          father: fam.husb,
+          mother: fam.wife
+        };
+
+        // Add child references
+        if (fam.husb) {
+          childMap[fam.husb] = childMap[fam.husb] || [];
+          childMap[fam.husb].push(id);
+        }
+        if (fam.wife) {
+          childMap[fam.wife] = childMap[fam.wife] || [];
+          childMap[fam.wife].push(id);
+        }
+
+        // Climb up recursively
+        if (fam.husb) climb(fam.husb);
+        if (fam.wife) climb(fam.wife);
+      }
+    }
+  }
+
+  climb(startId); // Start climbing from Braden
+
+  // Find all root ancestors (those who have no parents)
+  const roots = new Set();
+  for (const personId of Object.keys(parentMap)) {
+    const parents = parentMap[personId];
+    if (parents.father && !parentMap[parents.father]) roots.add(parents.father);
+    if (parents.mother && !parentMap[parents.mother]) roots.add(parents.mother);
+  }
+
+  // Build generations downward
   const generations = [];
-  const seenIndividuals = new Set();
-  const seenFamilies = new Set();
+  let currentGen = Array.from(roots);
 
-  let queue = ancestorIds.map(id => ({ indiId: id }));
+  while (currentGen.length > 0) {
+    generations.push(currentGen);
+    const nextGen = [];
 
-  while (queue.length) {
-    const nextQueue = [];
-    const generation = [];
-
-    for (const { indiId } of queue) {
-      if (seenIndividuals.has(indiId)) continue;
-      seenIndividuals.add(indiId);
-
-      const person = individuals[indiId];
-      if (!person) continue;
-
-      if (person.families.length > 0) {
-        for (const famId of person.families) {
-          if (seenFamilies.has(famId)) continue; // <-- Skip if family already printed
-          seenFamilies.add(famId);
-
-          const fam = families[famId];
-          if (fam) {
-            const husb = getName(individuals, fam.husb);
-            const wife = getName(individuals, fam.wife);
-            generation.push(`${husb} +++ ${wife}`);
-
-            if (fam.chil && fam.chil.length) {
-              for (const childId of fam.chil) {
-                if (!seenIndividuals.has(childId)) {
-                  nextQueue.push({ indiId: childId });
-                }
-              }
-            }
+    for (const id of currentGen) {
+      if (childMap[id]) {
+        for (const childId of childMap[id]) {
+          if (!nextGen.includes(childId)) {
+            nextGen.push(childId);
           }
         }
-      } else {
-        generation.push(person.name);
       }
     }
 
-    if (generation.length > 0) {
-      generations.push(generation);
-    }
-    queue = nextQueue;
+    currentGen = nextGen;
   }
 
-  // Format generations horizontally
+  // Now render the generations
+  const output = [];
+
   for (let i = 0; i < generations.length; i++) {
-    const line = generations[i].join("            ");
+    const gen = generations[i];
+    const line = gen.map(id => formatPerson(individuals, id)).join("            ");
     output.push(line);
 
     if (i < generations.length - 1) {
-      const mid = Math.floor(line.length / 2);
-      output.push(" ".repeat(mid) + "|");
-      output.push(" ".repeat(mid - 5) + "-".repeat(10));
+      const nextGen = generations[i + 1];
+      if (nextGen.length === 1) {
+        const mid = Math.floor(line.length / 2);
+        output.push(" ".repeat(mid) + "|");
+      } else {
+        const mid = Math.floor(line.length / 2);
+        output.push(" ".repeat(mid - 1) + "\\" + " ".repeat(2) + "/");
+        output.push(" ".repeat(mid - 10) + "-".repeat(20));
+      }
     }
   }
 
   return output.join("\n");
 }
 
-function getName(individuals, id) {
-  return individuals[id] ? individuals[id].name : '?';
+function formatPerson(individuals, id) {
+  if (!id) return "?";
+  const name = individuals[id]?.name || "?";
+  return name;
 }
