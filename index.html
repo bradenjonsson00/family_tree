@@ -2,36 +2,59 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Parse GEDCOM Only</title>
+  <title>Family Tree Viewer</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/raphael/2.3.0/raphael.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.min.js"></script>
   <style>
-    body {
-      font-family: monospace;
-      white-space: pre-wrap;
-      margin: 20px;
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f9f9f9;
+    }
+    #tree {
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+    }
+    #tree-simple {
+      width: 100%;
+      height: 100%;
     }
   </style>
 </head>
 <body>
-  <h1>Parsed GEDCOM Data</h1>
-  <div id="output">Loading...</div>
+  <div id="tree">
+    <div id="tree-simple"></div>
+  </div>
 
   <script>
     async function loadGedcom() {
       try {
-        const response = await fetch('family_tree.txt');  // fetch your .txt GEDCOM
+        const response = await fetch('family_tree.txt'); // your GEDCOM saved as .txt
         if (!response.ok) {
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
 
         const gedcomText = await response.text();
         const parsedData = parseGedcom(gedcomText);
+        const rootPersonId = "@I0000@"; // Start from Braden Jonsson
 
-        const outputDiv = document.getElementById('output');
-        outputDiv.textContent = JSON.stringify(parsedData, null, 2);  // Pretty printed JSON
+        const treeData = buildTreantNode(rootPersonId, parsedData);
+
+        new Treant({
+          chart: {
+            container: "#tree-simple",
+            node: { collapsable: true },
+            animation: { nodeAnimation: "easeOutBounce", nodeSpeed: 700, connectorsAnimation: "bounce", connectorsSpeed: 700 },
+          },
+          nodeStructure: treeData
+        });
 
       } catch (error) {
         console.error('Failed to load GEDCOM:', error);
-        document.getElementById('output').textContent = `Error: ${error.message}`;
+        document.getElementById('tree').innerHTML = `<p style="color: red;">Error loading GEDCOM file: ${error.message}</p>`;
       }
     }
 
@@ -79,6 +102,30 @@
       }
 
       return { people, families };
+    }
+
+    function buildTreantNode(personId, parsedData) {
+      const person = parsedData.people[personId];
+      if (!person) return null;
+
+      const node = {
+        text: { name: person.name || personId },
+        children: []
+      };
+
+      // Look for families where this person is a husband or wife
+      for (const [famId, family] of Object.entries(parsedData.families)) {
+        if (family.husband === personId || family.wife === personId) {
+          for (const childId of family.children) {
+            const childNode = buildTreantNode(childId, parsedData);
+            if (childNode) {
+              node.children.push(childNode);
+            }
+          }
+        }
+      }
+
+      return node;
     }
 
     loadGedcom();
