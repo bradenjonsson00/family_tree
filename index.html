@@ -2,48 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Family Tree Viewer</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/raphael/2.3.0/raphael.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.min.js"></script>
+  <title>Parse GEDCOM Only</title>
   <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      font-family: Arial, sans-serif;
-    }
-    #tree {
-      width: 100%;
-      height: 100%;
-      overflow: auto;
-      background: #f9f9f9;
-    }
-    #tree-simple {
-      width: 100%;
-      height: 100%;
+    body {
+      font-family: monospace;
+      white-space: pre-wrap;
+      margin: 20px;
     }
   </style>
 </head>
 <body>
-  <div id="tree">
-    <div id="tree-simple"></div>
-  </div>
+  <h1>Parsed GEDCOM Data</h1>
+  <div id="output">Loading...</div>
 
   <script>
     async function loadGedcom() {
       try {
-        const response = await fetch('family_tree.txt'); // fetch your .txt GEDCOM
+        const response = await fetch('family_tree.txt');  // fetch your .txt GEDCOM
         if (!response.ok) {
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
 
         const gedcomText = await response.text();
-        const data = parseGedcom(gedcomText);
-        createTree(data);
+        const parsedData = parseGedcom(gedcomText);
+
+        const outputDiv = document.getElementById('output');
+        outputDiv.textContent = JSON.stringify(parsedData, null, 2);  // Pretty printed JSON
 
       } catch (error) {
         console.error('Failed to load GEDCOM:', error);
-        document.body.innerHTML = `<p style="color: red;">Error loading GEDCOM file: ${error.message}</p>`;
+        document.getElementById('output').textContent = `Error: ${error.message}`;
       }
     }
 
@@ -58,20 +46,28 @@
       for (let line of lines) {
         line = line.trim();
         if (!line) continue;  // skip empty lines
-        const parts = line.split(' ');
-        const level = parts[0];
-        const tag = parts[2] || parts[1];
-        const value = parts.slice(3).join(' ');
+
+        const match = line.match(/^(\d+) +(@[^@]+@)? *([A-Z]+) *(.*)$/);
+        if (!match) continue;
+
+        const level = match[1];
+        const pointer = match[2];  // like @I0000@
+        const tag = match[3];      // like NAME
+        const value = match[4];    // like Braden /Jonsson/
 
         if (tag === "INDI") {
-          currentIndividual = parts[1];
-          people[currentIndividual] = { id: currentIndividual, name: "", gender: "male" };
+          currentIndividual = pointer;
+          people[currentIndividual] = { id: currentIndividual, name: "", gender: "male", families: { asSpouse: [], asChild: [] } };
         } else if (tag === "NAME" && currentIndividual) {
           people[currentIndividual].name = value.replace(/\//g, '').trim();
         } else if (tag === "SEX" && currentIndividual) {
           people[currentIndividual].gender = (value === "M") ? "male" : "female";
+        } else if (tag === "FAMC" && currentIndividual) {
+          people[currentIndividual].families.asChild.push(value);
+        } else if (tag === "FAMS" && currentIndividual) {
+          people[currentIndividual].families.asSpouse.push(value);
         } else if (tag === "FAM") {
-          currentFamily = parts[1];
+          currentFamily = pointer;
           families[currentFamily] = { husband: null, wife: null, children: [] };
         } else if (tag === "HUSB" && currentFamily) {
           families[currentFamily].husband = value;
@@ -82,44 +78,7 @@
         }
       }
 
-      // Force root to Braden (@I0000@)
-      const rootId = "@I0000@";
-
-      function buildTree(personId) {
-        const person = people[personId];
-        if (!person) return null;
-
-        const children = [];
-
-        for (const fam of Object.values(families)) {
-          if (fam.husband === personId || fam.wife === personId) {
-            for (const childId of fam.children) {
-              const childTree = buildTree(childId);
-              if (childTree) children.push(childTree);
-            }
-          }
-        }
-
-        const node = {
-          text: { name: person.name || personId },
-          children: children
-        };
-
-        return node;
-      }
-
-      return buildTree(rootId);
-    }
-
-    function createTree(treeData) {
-      new Treant({
-        chart: {
-          container: "#tree-simple",
-          node: { collapsable: true },
-          animation: { nodeAnimation: "easeOutBounce", nodeSpeed: 700, connectorsAnimation: "bounce", connectorsSpeed: 700 },
-        },
-        nodeStructure: treeData
-      });
+      return { people, families };
     }
 
     loadGedcom();
