@@ -45,6 +45,7 @@
 1 NAME Baldur /Jonsson/
 1 SEX M
 1 FAMS @F0001@
+1 FAMC @F0003@
 0 @I0004@ INDI
 1 NAME Florence /Jonsson/
 1 SEX F
@@ -79,4 +80,16 @@
 1 NAME Haley /Jonsson/
 1 SEX F
 1 FAMC @F0000@
+0 @I0009@ INDI
+1 NAME Thorsteinn /Jonsson/
+1 SEX M
+1 FAMS @F0003@
+0 @I0010@ INDI
+1 NAME Sigridur /Jonsson/
+1 SEX F
+1 FAMS @F0003@
+0 @F0003@ FAM
+1 HUSB @I0009@
+1 WIFE @I0010@
+1 CHIL @I0003@
 0 TRLR
