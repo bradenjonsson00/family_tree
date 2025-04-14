@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>GEDCOM Viewer</title>
-  <script src="https://cdn.jsdelivr.net/gh/PeWu/GeneaViewer/geneaviewer.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/PeWu/GeneaViewer@latest/geneaviewer.js"></script>
 </head>
 <body>
   <h1>GEDCOM Viewer</h1>
@@ -14,7 +14,7 @@
       const viewerDiv = document.getElementById('geneaviewer');
 
       try {
-        const response = await fetch('family_tree.ged'); 
+        const response = await fetch('family_tree.ged');
         if (!response.ok) {
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
@@ -29,5 +29,5 @@
 
     loadGedcom();
   </script>
-</body>
+</body> 
 </html>
