@@ -32,7 +32,7 @@ async function main() {
   const bradenId = "@I0000@";
 
   const topAncestors = findTopAncestors(individuals, families, bradenId);
-  const treeText = buildTree(individuals, families, topAncestors);
+  const treeText = buildTree(individuals, families, topAncestors[0]);
 
   document.getElementById('tree').textContent = treeText;
   
