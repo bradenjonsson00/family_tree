@@ -16,6 +16,7 @@
       width: 100%;
       height: 100%;
       overflow: auto;
+      background: #f9f9f9;
     }
     #tree-simple {
       width: 100%;
@@ -31,7 +32,7 @@
   <script>
     async function loadGedcom() {
       try {
-        const response = await fetch('family_tree.txt');  // still using .txt
+        const response = await fetch('family_tree.txt'); // fetch your .txt GEDCOM
         if (!response.ok) {
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
@@ -56,6 +57,7 @@
 
       for (let line of lines) {
         line = line.trim();
+        if (!line) continue;  // skip empty lines
         const parts = line.split(' ');
         const level = parts[0];
         const tag = parts[2] || parts[1];
@@ -65,7 +67,7 @@
           currentIndividual = parts[1];
           people[currentIndividual] = { id: currentIndividual, name: "", gender: "male" };
         } else if (tag === "NAME" && currentIndividual) {
-          people[currentIndividual].name = value.replace(/\//g, '');
+          people[currentIndividual].name = value.replace(/\//g, '').trim();
         } else if (tag === "SEX" && currentIndividual) {
           people[currentIndividual].gender = (value === "M") ? "male" : "female";
         } else if (tag === "FAM") {
@@ -80,25 +82,26 @@
         }
       }
 
-      // Find the root person (first without parents)
-      let rootId = Object.keys(people)[0];
-
-      const nodes = [];
+      // Force root to Braden (@I0000@)
+      const rootId = "@I0000@";
 
       function buildTree(personId) {
         const person = people[personId];
+        if (!person) return null;
+
         const children = [];
 
         for (const fam of Object.values(families)) {
           if (fam.husband === personId || fam.wife === personId) {
             for (const childId of fam.children) {
-              children.push(buildTree(childId));
+              const childTree = buildTree(childId);
+              if (childTree) children.push(childTree);
             }
           }
         }
 
         const node = {
-          text: { name: person.name },
+          text: { name: person.name || personId },
           children: children
         };
 
